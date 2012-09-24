@@ -42,12 +42,12 @@ class locum_covers extends locum {
 			$sql = "SELECT locum_bib_items.bnum FROM locum_bib_items " .
 						 "LEFT JOIN locum_covercache ON locum_bib_items.bnum = locum_covercache.bnum " .
 						 "WHERE locum_covercache.bnum IS NULL " .
-						 "AND locum_bib_items.bnum >  " . $break_num . " " .
+						 "AND locum_bib_items.bnum > :break " .
 						 "ORDER BY locum_bib_items.bnum ASC " .
 						 "LIMIT $limit";
 
-//			$statement = $db->prepare($sql, array('integer'));
-			$result = $db->query($sql);
+			$statement = $db->prepare($sql, array('integer'));
+			$result = $statement->execute(array('break' => $break_num));
             $bnum_arr = $result->fetchCol();
             if (PEAR::isError($result) && $this->cli) {
 				echo "DB connection failed... " . $result->getMessage() . "\n";
@@ -55,7 +55,7 @@ class locum_covers extends locum {
 			$num_rows = $result->numRows();
 			$batch_type = 'NEW';
 		}
-		
+
 		if ($num_rows == 0) {
 			// If no new records, grab the oldest processed records that don't have a cached image
 			if ($break_num && $type == 'RETRY') {
@@ -67,7 +67,7 @@ class locum_covers extends locum {
 							 "ORDER BY updated ASC " .
 							 "LIMIT $limit ";
 			  $statement = $db->prepare($sql, array('integer'));
-				$result = $statement->execute(array('break' => $break_num));
+			  $result = $statement->execute(array('break' => $break_num));
 			} else {
 				$sql = "SELECT bnum FROM locum_covercache " .
 							 "WHERE cover_stdnum = '' " .
@@ -79,13 +79,15 @@ class locum_covers extends locum {
 			if (PEAR::isError($result) && $this->cli) {
 				echo "DB connection failed... " . $result->getMessage() . "\n";
 			}
+			$bnum_arr = $result->fetchCol();
 			$statement->free();
 			$num_rows = $result->numRows();
 			$batch_type = 'RETRY';
 		}
-		$start = $result->fetchRow(MDB2_FETCHMODE_ASSOC);
-		$end = $result->fetchRow(MDB2_FETCHMODE_ASSOC, $num_rows-1);
-		return array('start' => $start['bnum'], 'end' => $end['bnum'], 'type' => $batch_type);
+
+		$start = $bnum_arr[0];
+		$end = $bnum_arr[$num_rows - 1];
+		return array('start' => $start, 'end' => $end, 'type' => $batch_type);
 	}
 	
 	public function process_covers($break, $limit, $type = 'NEW') {
@@ -191,16 +193,19 @@ class locum_covers extends locum {
    * Display a block of covercache statistics.
    */
   public function get_stats() {
-    $db = MDB2::connect($this->dsn);
-    $res = $db->query("SELECT COUNT(bnum) FROM locum_bib_items");
-return $res->fetchAll;
-    $total = array_shift($res->fetchRow);
-  //  $processed = array_shift($db->queryRow("SELECT COUNT(locum_bib_items.bnum) FROM locum_bib_items, locum_covercache WHERE locum_bib_items.bnum = locum_covercache.bnum"));
-  //  $cached = array_shift($db->queryRow("SELECT COUNT(locum_bib_items.bnum) FROM locum_bib_items, locum_covercache WHERE locum_bib_items.bnum = locum_covercache.bnum AND locum_covercache.cover_stdnum <> ''"));
 
-  //  $stats .= "Total Bib Records   : $total\n";
-  //  $stats .= "Records Processed   : $processed (" . number_format(($processed / $total) * 100, 2) . "%)\n";
-  //  $stats .= "Unprocessed Records : " . ($total - $processed) . "\n";
+    $db =& MDB2::connect($this->dsn);
+	if (PEAR::isError($db)) {
+	    die($db->getMessage());
+	}
+
+	$total = array_shift($db->queryRow("SELECT COUNT(bnum) FROM locum_bib_items"));
+    $processed = array_shift($db->queryRow("SELECT COUNT(locum_bib_items.bnum) FROM locum_bib_items, locum_covercache WHERE locum_bib_items.bnum = locum_covercache.bnum"));
+    $cached = array_shift($db->queryRow("SELECT COUNT(locum_bib_items.bnum) FROM locum_bib_items, locum_covercache WHERE locum_bib_items.bnum = locum_covercache.bnum AND locum_covercache.cover_stdnum <> ''"));
+
+    $stats = "Total Bib Records   : $total\n";
+    $stats .= "Records Processed   : $processed (" . number_format(($processed / $total) * 100, 2) . "%)\n";
+    $stats .= "Unprocessed Records : " . ($total - $processed) . "\n";
     $stats .= "Covers Cached       : $cached (" . number_format(($cached / $total) * 100, 2) . "%)\n";
     
     return $stats;
@@ -219,7 +224,7 @@ return $res->fetchAll;
 		$sources = $this->locum_config['coversources'];
 		
 		foreach ($sources as $id => &$source) {
-			if ($this->locum_config['sourcelimits'][$id] &&
+			if (isset($this->locum_config['sourcelimits'][$id]) &&
 					$this->lookup_count > $this->locum_config['sourcelimits'][$id]) {
 				break;
 			}
