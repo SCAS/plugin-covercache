@@ -1,0 +1,7 @@
+; $Id$
+name = Cover Cache
+version = 6.x-1.0-dev
+description = Cover Cache Management Tools
+core = 6.x
+dependencies[] = sopac
+package = "SOPAC"

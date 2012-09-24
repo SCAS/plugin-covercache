@@ -1,0 +1,26 @@
+/* $Id: */
+
+/**
+ * Rollover edit links for cover cache images
+ */
+
+div.cover-with-editing
+{
+  position: relative;
+}
+
+div.cover-with-editing div.edit
+{
+  display: none;
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 40;
+  border: 1px solid #eee;
+  background-color: #fff;
+}
+
+div.cover-with-editing:hover div.edit
+{
+  display: block;
+}

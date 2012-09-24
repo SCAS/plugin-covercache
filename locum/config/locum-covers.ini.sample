@@ -1,0 +1,47 @@
+; This is the Locum Covers configuration file
+;
+; Place into the Locum "config" directory along with your regular locum.ini file
+;
+; This is just a sample configuration file and is provided pre-populated
+; so that you can see how it works.
+
+[cover_cache]
+image_path = "/home/www/covercache"
+log_path = "/usr/local/var/log"
+apache_user = "www-data"
+apache_group = "www-data"
+
+; WorldCat XISBN Service info
+[xisbn_config]
+AffiliateID = "yourlibraryid" ; outside facing IP of this PHP server
+limit     = 10000
+
+; URL sources of covers from ISBN
+; place %ISBN% in the url where the ISBN should be placed
+[coversources]
+amazon       = "http://images.amazon.com/images/P/%ISBN%.01._FMjpg_SCLZZZZZZZ_.jpg"
+; librarything = "http://covers.librarything.com/devkey/[YOUR LIBRARYTHING DEVKEY]/large/isbn/%ISBN%"
+; gapines      = "http://gapines.org/opac/extras/ac/jacket/large/%ISBN%"
+openlibrary  = "http://covers.openlibrary.org/b/isbn/%ISBN%-L.jpg"
+syndetics    = "http://www.syndetics.com/hw7.pl?isbn=%ISBN%+A/LC.jpg"
+; worldcat     = "http://www.worldcat.org/wcpa/servlet/DCARead?standardNo=%ISBN%&standardNoType=1"
+
+; limits on sources (key to same identifier)
+; once limit has been hit, source will not be used again this run
+[sourcelimits]
+; librarything = 1000
+
+; Amazon API Config
+[amazon_search]
+accesskey = "87CB6XLNDB8NGYLE74GHLMHDH" ; Your Amazon Subscription ID
+secret = "HS6SE6HE6=ES4H^++M6UDAB4+MU6=,7IFB4AW";
+mat_codes = "1,2,4,5,6,7,8,11,12,13,15,17"
+vid_matcodes = "5,6,7,17"
+music_matcodes = "4"
+
+; pixel widths of the cached images
+[cover_widths]
+0 = 50
+1 = 100
+2 = 150
+3 = 200

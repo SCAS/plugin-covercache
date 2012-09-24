@@ -1,0 +1,309 @@
+<?php
+/**
+ * Implementation of hook_help().
+ */
+function covercache_help($section) {
+  switch ($section) {
+    case 'admin/modules#description':
+      // This description is shown in the listing at admin/modules.
+      return t('Enables CoverCache Administration');
+  }
+}
+
+/**
+ * Implementation of hook_perm().
+ */
+function covercache_perm() {
+  return array('access covercache', 'administer covercache');
+}
+
+function covercache_init() {
+  // Grab the Locum path from config and load it
+  $locum_path = trim(variable_get('sopac_locum_path', '/usr/local/lib/locum'));
+  if ($locum_path[0] != '/') { $locum_path = '/' . $locum_path; }
+  if (substr($locum_path, -1) != '/') { $locum_path .= '/'; }
+  if (@file_exists($locum_path . 'locum-client.php')) {
+    @require_once($locum_path . 'locum-client.php');
+  }
+  if (@file_exists($locum_path . '/plugins/locum-covers/locum-covers.php')) {
+    require_once($locum_path . '/plugins/locum-covers/locum-covers.php');
+
+  }
+}
+
+/**
+ * Implementation of hook_menu().
+ */
+function covercache_menu() {
+  $items = array();
+
+  $items['admin/settings/sopac/covercache'] = array(
+    'title' => 'Cover Cache settings',
+    'description' => 'Configure Cover Cache Cacheing Options.',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('covercache_admin'),
+    'access arguments' => array('administer covercache'),
+    'type' => MENU_NORMAL_ITEM,
+  );
+
+  $items['covercache'] = array(
+    'title' => "Cover Cache",
+    'page callback' => 'covercache_image',
+    'access arguments' => array('access covercache'),
+    'type' => MENU_CALLBACK,
+  );
+
+  $items['autocovercache'] = array(
+    'title' => "Autocreate Cover Cache",
+    'page callback' => 'covercache_auto',
+    'access arguments' => array('access covercache'),
+    'type' => MENU_CALLBACK,
+  );
+
+  return $items;
+}
+
+function covercache_admin() {
+  $form['covercache_widths'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Default Cover Cache Widths'),
+    '#default_value' => variable_get('covercache_widths', "400,200,100,50"),
+    '#size' => 64,
+    '#maxlength' => 64,
+    '#description' => t("Created widths of Cover Caches, in pixels. Separate values with commas."),
+    '#required' => TRUE,
+  );
+
+  $form['covercache_hitlistwidth'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Fixed hitlist image width'),
+    '#default_value' => variable_get('covercache_hitlistwidth', "100"),
+    '#size' => 5,
+    '#maxlength' => 4,
+    '#description' => t("Fixed width (in pixels) for images that appear on the hitlist.  Leave blank if you want to use the cached image size."),
+    '#required' => FALSE,
+  );
+
+  $form['covercache_recordwidth'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Fixed item record image width'),
+    '#default_value' => variable_get('covercache_recordwidth', "200"),
+    '#size' => 5,
+    '#maxlength' => 4,
+    '#description' => t("Fixed width (in pixels) for images that appear on the item record.  Leave blank if you want to use the cached image size."),
+    '#required' => FALSE,
+  );
+
+  $form['covercache_coverurl'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Base URL for image files'),
+    '#default_value' => variable_get('covercache_coverurl', "http://your.server.org/images/"),
+    '#size' => 64,
+    '#maxlength' => 254,
+    '#description' => t("This is the base URL for your cached images.  In other words, where should browsers look for the cover images?"),
+    '#required' => TRUE,
+  );
+
+  $form['covercache_nocoverimg'] = array(
+    '#type' => 'textfield',
+    '#title' => t('No cover image URL'),
+    '#default_value' => variable_get('covercache_nocoverimg', "http://your.server.org/images/nocover.png"),
+    '#size' => 64,
+    '#maxlength' => 254,
+    '#description' => t("This is the URL of the cover image to display if no cover image is found."),
+    '#required' => TRUE,
+  );
+
+  return system_settings_form($form);
+}
+
+function covercache_image($bnum = 0) {
+  drupal_add_js('misc/collapse.js');
+  $bnum = intval($bnum);
+  $loc_cli = new locum_client;
+  $loc_cov = new locum_covers;
+  $bib = $loc_cli->get_bib_item($bnum);
+  
+  $content = "<h1>Cover Cache for " . $bib['title'] . "</h1>";
+  $content .= "<fieldset class=\"collapsible collapsed\"><legend>Bib Record Details</legend>";
+  $content .= "<table><tr><th>DB Field</th><th>Value</th></tr>";
+  foreach($bib as $field => $value) {
+    $class = ($class == "odd" ? "even" : "odd");
+    $content .= "<tr class=\"$class\"><td>$field</td><td>$value</td></tr>";
+  }
+  $content .= "</table>";
+  $content .= "</fieldset>";
+  
+  // Current Cover Images
+  if ($bib['cover_img'] == "CACHE") {
+    $content .= "<table><tr><th colspan=" . count($loc_cov->locum_config['cover_widths']) . ">Current Cover Cache:</th></tr><tr>";
+    foreach ($loc_cov->locum_config['cover_widths'] as $width) {
+      $content .= "<td>";
+      $content .= "<img src=\"" . variable_get('covercache_coverurl', "http://your.server.org/images/") . "{$bnum}_{$width}.jpg\"><br />$width px";
+      $content .= "</td>";
+    }
+    $content .= "</tr></table>";
+  }
+  
+  if ($bib['stdnum']) {
+    $bib['stdnum'] = preg_replace("/[^a-zA-Z0-9]/", "", $bib['stdnum']);
+    $sources = $loc_cov->locum_config['coversources'];
+    $content .= "<table><tr><th colspan=" . count($sources) . ">Sources for Standard Num " . $bib['stdnum'] . ":</th></tr><tr>";
+    foreach ($sources as $id => &$source) {
+      $imgurl = str_replace("%ISBN%", $bib['stdnum'], $source);
+      $content .= "<td>";
+      $content .= "<img src=\"$imgurl\"><br />$id<br />$imgurl";
+      $content .= "</td>";
+    }
+    $content .= "</tr></table>";
+  }
+  
+  $content .= drupal_get_form('covercache_manual_form', $bnum);
+  
+  return $content;
+}
+
+function covercache_image_url($bnum, $type = 'hitlist') {
+  $bnum = intval($bnum);
+  $loc_cli = new locum_client;
+  $bib = $loc_cli->get_bib_item($bnum);
+  
+  switch ($type) {
+    case 'hitlist':
+      $width = variable_get('covercache_hitlistwidth', "100");
+      break;
+    case 'record':
+      $width = variable_get('covercache_recordwidth', "200");
+      break;
+    default:
+      $width = variable_get('covercache_hitlistwidth', "100");
+      break;
+  }
+
+  if ($bib['cover_img'] == "CACHE") {
+    $img_url = variable_get('covercache_coverurl', "http://your.server.org/images/") . "{$bnum}_{$width}.jpg";
+  } else if (!$bib['cover_img']) {
+    $img_url = variable_get('covercache_nocoverimg', "http://your.server.org/images/nocover.png");   
+  } else {
+    $img_url = $bib['cover_img'];
+  }
+  
+  return $img_url;
+}
+
+function covercache_manual_form($form_state, $bnum) {
+  $form['bnum'] = array(
+    '#type' => 'value',
+    '#value' => $bnum,
+  );
+  $form['url'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Override URL'),
+    '#size' => 60,
+    '#maxlength' => 128,
+    '#description' => t('Enter the URL of the image to cache for this Bib Record'),
+  );
+  $form['stdnum'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Standard Number'),
+    '#size' => 16,
+    '#maxlength' => 16,
+    '#description' => t('Standard Number for this image (ISBN, ASIN, etc.)'),
+  );
+  $form['submit'] = array(
+    '#type' => 'submit',
+    '#value' => t('Create Cache'),
+  );
+  return $form;
+}
+
+function covercache_manual_form_submit($form, &$form_state) {
+  $bnum = $form_state['values']['bnum'];
+  $url = trim($form_state['values']['url']);
+  $stdnum = trim($form_state['values']['stdnum']) ? trim($form_state['values']['stdnum']) : 'MANUAL';
+  $lc = new locum_covers;
+  
+  if ($lc->create_covercache($bnum, $url, $stdnum)) {
+    drupal_set_message("Cover Cache Updated Successfully");
+  } else {
+    drupal_set_message("Cover Cache Not Updated", 'error');
+  }
+  
+  drupal_goto("covercache/$bnum");
+}
+
+function covercache_auto($bnum = 0) {
+  $bnum = intval($bnum);
+  
+  if ($bnum) {
+    $locum = new locum_client;
+    $bib = $locum->get_bib_item($bnum);
+  } else {
+    return;
+  }
+  
+  $goto = str_replace('http://' . $_SERVER['HTTP_HOST'] , '', $_SERVER['HTTP_REFERER']);
+  $lc = new locum_covers;
+  $cover_img = $lc->get_coverimage($bib);
+  if ($cover_img) {
+    $lc->create_covercache($bnum, $cover_img['image_url'], $cover_img['stdnum']);
+  }
+  header('Location: ' . $goto);
+}
+
+/**
+ * Setup the cover cache image for display in the sopac template
+ */
+function template_preprocess_sopac_record(&$vars) {
+  $img_width = variable_get('covercache_recordwidth', "200");
+  
+  if ($vars['item']['cover_img'] == "CACHE")
+    $vars['cover_img'] = variable_get('covercache_coverurl', "http://your.server.org/images/") . $vars['item']['bnum'] . "_200.jpg";
+  else if ($vars['item']['cover_img'])
+    $vars['cover_img'] = $vars['item']['cover_img'];
+  else
+    $vars['cover_img'] = variable_get('covercache_nocoverimg', "http://your.server.org/images/nocover.png");
+
+  $vars['cover_img'] = '<img class="item-cover" width="' . $img_width . '" src="' . $vars['cover_img'] . '" />';
+  
+  if (user_access('access covercache')) {
+    drupal_add_css(drupal_get_path('module', 'covercache') . '/covercache.css');
+    $vars['cover_img'] = '<div class="cover-with-editing">' .
+                        $vars['cover_img'] .
+                        '<div class="item-cover edit">' .
+                        l("Edit", 'covercache/' . $vars['item']['bnum']) . ' ' .
+                        l("Auto", 'autocovercache/' . $vars['item']['bnum']) .
+                         '</div></div>';
+  }
+}
+
+
+function template_preprocess_sopac_results_hitlist_rss(&$vars) {
+  template_preprocess_sopac_results_hitlist(&$vars);
+}
+
+function template_preprocess_sopac_results_hitlist(&$vars) {
+  $bib_url = variable_get('sopac_url_prefix', 'cat/seek') . '/record/' . $vars['locum_result']['bnum'];
+  $img_width = variable_get('covercache_hitlistwidth', "100");
+  
+  if ($vars['locum_result']['cover_img'] == "CACHE")
+    $vars['cover_img'] = variable_get('covercache_coverurl', "http://your.server.org/images/") . $vars['locum_result']['bnum'] . "_200.jpg";
+  else if ($vars['locum_result']['cover_img'])
+    $vars['cover_img'] = $vars['locum_result']['cover_img'];
+  else
+    $vars['cover_img'] = variable_get('covercache_nocoverimg', "http://your.server.org/images/nocover.png");
+    
+  $vars['cover_img'] = l('<img class="hitlist-cover" width="' . $img_width . '" src="' . $vars['cover_img'] . '" />',
+                         $bib_url,
+                         array('html' =>TRUE, 'attributes' => array('class' => $vars['locum_result']['mat_code'])));
+  
+  if (user_access('access covercache')) {
+    drupal_add_css(drupal_get_path('module', 'covercache') . '/covercache.css');
+    $vars['cover_img'] = '<div class="cover-with-editing">' .
+                        $vars['cover_img'] .
+                        '<div class="item-cover edit">' .
+                        l("Edit", 'covercache/' . $vars['locum_result']['bnum']) . ' ' .
+                        l("Auto", 'autocovercache/' . $vars['locum_result']['bnum']) .
+                        '</div></div>';
+  }
+}
